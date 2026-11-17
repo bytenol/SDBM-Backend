@@ -1,0 +1,1 @@
+Create postgressdb named schooldb
