@@ -10,9 +10,8 @@ from .models import Student, StudentGuardian, StudentEnrollment, StudentDocument
 from .serializers import (
     StudentSerializer,
     StudentProvisioningSerializer,
-    StudentGuardianSerializer,
     StudentDocumentSerializer,
-    StudentEnrollmentSerializer
+    StudentPromotionSerializer
 )
 from .filters import StudentFilter
 from .permissions import IsStudentAdminOrAuthorizedStaff
@@ -77,6 +76,33 @@ class StudentViewSet(viewsets.ModelViewSet):
         return Response({
             "success": False,
             "message": "Document upload failed.",
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrSuperAdmin])
+    def promote(self, request):
+        """
+        Endpoint for individual or bulk student promotion across academic sessions.
+        Requires ADMIN or SUPER_ADMIN role.
+        """
+        serializer = StudentPromotionSerializer(data=request.data)
+        if serializer.is_valid():
+            log, count = serializer.save(admin_user=request.user)
+            return Response({
+                "success": True,
+                "message": f"Successfully promoted {count} student(s) to the new academic session.",
+                "data": {
+                    "promoted_count": count,
+                    "log_id": str(log.id),
+                    "source_session": str(log.source_session.name),
+                    "destination_session": str(log.destination_session.name),
+                    "destination_class": str(log.destination_class.name)
+                }
+            }, status=status.HTTP_200_OK)
+        return Response({
+            "success": False,
+            "message": "Student promotion failed.",
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 

@@ -2,7 +2,7 @@ from rest_framework import serializers
 from apps.accounts.serializers import UserSerializer
 from apps.academics.serializers import AcademicSessionSerializer, ClassSerializer, ClassArmSerializer
 from .models import Student, StudentGuardian, StudentEnrollment, StudentDocument
-from .services import provision_student_account
+from .services import promote_students_service, provision_student_account
 
 class StudentGuardianSerializer(serializers.ModelSerializer):
     guardian_details = UserSerializer(source='guardian', read_only=True)
@@ -111,3 +111,26 @@ class StudentProvisioningSerializer(serializers.Serializer):
         # Calls our atomic provisioning service
         student, temp_password = provision_student_account(self.validated_data, admin_user)
         return student, temp_password
+
+
+
+class StudentPromotionSerializer(serializers.Serializer):
+    source_session = serializers.UUIDField(required=True)
+    destination_session = serializers.UUIDField(required=True)
+    student_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=True,
+        min_length=1,
+        help_text="List of student UUIDs to promote"
+    )
+    destination_class = serializers.UUIDField(required=True)
+    destination_class_arm = serializers.UUIDField(required=False, allow_null=True)
+    remarks = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if attrs['source_session'] == attrs['destination_session']:
+            raise serializers.ValidationError("Source and destination academic sessions cannot be the same.")
+        return attrs
+
+    def save(self, admin_user=None):
+        return promote_students_service(self.validated_data, admin_user)

@@ -151,3 +151,25 @@ class StudentDocument(TimeStampedUUIDModel):
 
     def __str__(self):
         return f"{self.get_document_type_display()} - {self.student}"
+
+
+
+class StudentPromotionLog(TimeStampedUUIDModel):
+    """
+    Audit log tracking bulk or individual student promotions between academic sessions.
+    """
+    source_session = models.ForeignKey(AcademicSession, on_delete=models.CASCADE, related_name='promotions_from')
+    destination_session = models.ForeignKey(AcademicSession, on_delete=models.CASCADE, related_name='promotions_to')
+    destination_class = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='+')
+    destination_class_arm = models.ForeignKey(ClassArm, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    promoted_students_count = models.PositiveIntegerField(default=0)
+    promoted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    remarks = models.TextField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = 'Student Promotion Log'
+        verbose_name_plural = 'Student Promotion Logs'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Promotion: {self.source_session.name} -> {self.destination_session.name} ({self.promoted_students_count} students)"
