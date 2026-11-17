@@ -1,6 +1,5 @@
 from rest_framework import permissions
-from apps.students.models import StudentGuardian
-
+from .services.dashboard_services import get_parent_guardian_links_queryset
 
 class IsAdminPortalUser(permissions.BasePermission):
     """
@@ -50,7 +49,6 @@ class IsStudentPortalUser(permissions.BasePermission):
             and user.student_profile is not None
         )
 
-
 class IsParentPortalUser(permissions.BasePermission):
     """
     Allows access to authenticated users with the PARENT role or linked children via StudentGuardian.
@@ -63,4 +61,4 @@ class IsParentPortalUser(permissions.BasePermission):
             return False
         if user.roles.filter(name='PARENT').exists():
             return True
-        return StudentGuardian.objects.filter(guardian=user).exists()
+        return get_parent_guardian_links_queryset(user).exists()

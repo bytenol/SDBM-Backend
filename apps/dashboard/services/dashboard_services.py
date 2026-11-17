@@ -1,8 +1,13 @@
-from django.db.models import Prefetch
-from apps.academics.models import SchoolSettings
 from apps.students.models import Student, StudentEnrollment, StudentGuardian
-from apps.staff.models import Staff, StaffEmployment, TeacherAssignment
-
+from django.db.models import Prefetch
+from apps.academics.models import (
+    SchoolSettings
+)
+from apps.staff.models import (
+    Staff,
+    StaffEmployment,
+    TeacherAssignment,
+)
 
 def get_active_school_context() -> dict:
     """
@@ -54,7 +59,7 @@ def build_consolidated_me_payload(user) -> dict:
     role_names = list(user.roles.values_list('name', flat=True))
     has_staff = hasattr(user, 'staff_profile') and user.staff_profile is not None
     has_student = hasattr(user, 'student_profile') and user.student_profile is not None
-    linked_children_count = StudentGuardian.objects.filter(guardian=user).count()
+    linked_children_count = get_parent_guardian_links_queryset(user).count()
 
     available_portals = []
     if user.is_superuser or 'SUPER_ADMIN' in role_names or 'ADMIN' in role_names:
@@ -194,7 +199,7 @@ def build_parent_self_profile_payload(user) -> dict:
     """
     settings_obj = SchoolSettings.load()
     guardian_links = (
-        StudentGuardian.objects.filter(guardian=user)
+        get_parent_guardian_links_queryset(user)
         .select_related('student__user')
         .order_by('student__last_name', 'student__first_name')
     )
@@ -216,10 +221,21 @@ def build_parent_self_profile_payload(user) -> dict:
             .first()
         )
 
+        relationship_val = (
+            getattr(link, 'relationship', None)
+            or getattr(link, 'relationship_type', None)
+            or getattr(link, 'relation', None)
+            or 'GUARDIAN'
+        )
+        is_primary_val = bool(
+            getattr(link, 'is_primary', False)
+            or getattr(link, 'is_primary_guardian', False)
+        )
+
         children_data.append({
             "guardian_link_id": str(link.id),
-            "relationship": link.relationship,
-            "is_primary_guardian": getattr(link, 'is_primary', False),
+            "relationship": relationship_val,
+            "is_primary_guardian": is_primary_val,
             "student_id": str(student.id),
             "admission_number": student.user.login_id if student.user else None,
             "first_name": student.first_name,
@@ -250,3 +266,22 @@ def build_parent_self_profile_payload(user) -> dict:
         "linked_children_count": len(children_data),
         "linked_children": children_data,
     }
+
+
+def get_parent_guardian_links_queryset(user):
+    """
+    Safely filters StudentGuardian records for the authenticated parent user,
+    supporting either direct User FK (`guardian=user`) or profile FK (`guardian__user=user`).
+    """
+    field_names = {f.name for f in StudentGuardian._meta.get_fields()}
+    if 'guardian' in field_names:
+        rel_model = StudentGuardian._meta.get_field('guardian').related_model
+        if rel_model == user.__class__:
+            return StudentGuardian.objects.filter(guardian=user)
+        return StudentGuardian.objects.filter(guardian__user=user)
+    if 'parent' in field_names:
+        rel_model = StudentGuardian._meta.get_field('parent').related_model
+        if rel_model == user.__class__:
+            return StudentGuardian.objects.filter(parent=user)
+        return StudentGuardian.objects.filter(parent__user=user)
+    return StudentGuardian.objects.none()

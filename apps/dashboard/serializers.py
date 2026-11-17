@@ -12,6 +12,18 @@ from apps.students.models import Student, StudentEnrollment, StudentGuardian
 User = get_user_model()
 
 
+
+class DashboardContextFilterSerializer(serializers.Serializer):
+    """
+    Validates optional session_id, term_id, student_id, class_id, and refresh parameters on dashboard endpoints.
+    """
+    session_id = serializers.UUIDField(required=False)
+    term_id = serializers.UUIDField(required=False)
+    student_id = serializers.UUIDField(required=False)
+    class_id = serializers.UUIDField(required=False)
+    refresh = serializers.BooleanField(required=False, default=False)
+
+
 class AccountMeUpdateSerializer(serializers.ModelSerializer):
     """
     Allows an authenticated user to update only their safe contact/display fields on /api/v1/profile/me/.
@@ -83,19 +95,63 @@ class StudentEnrollmentSummarySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+
 class StudentGuardianSummarySerializer(serializers.ModelSerializer):
     guardian_name = serializers.SerializerMethodField()
-    guardian_email = serializers.ReadOnlyField(source='guardian.email')
-    guardian_login_id = serializers.ReadOnlyField(source='guardian.login_id')
+    guardian_email = serializers.SerializerMethodField()
+    guardian_login_id = serializers.SerializerMethodField()
+    relationship = serializers.SerializerMethodField()
+    is_primary = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentGuardian
-        fields = ['id', 'guardian_login_id', 'guardian_name', 'guardian_email', 'relationship']
+        fields = [
+            'id',
+            'guardian_login_id',
+            'guardian_name',
+            'guardian_email',
+            'relationship',
+            'is_primary',
+        ]
         read_only_fields = fields
 
-    def get_guardian_name(self, obj) -> str:
-        return f"{obj.guardian.first_name} {obj.guardian.last_name}".strip()
+    def _get_guardian_user(self, obj):
+        guardian = getattr(obj, 'guardian', None) or getattr(obj, 'parent', None) or getattr(obj, 'user', None)
+        if hasattr(guardian, 'user') and guardian.user is not None:
+            return guardian.user
+        return guardian
 
+    def get_guardian_name(self, obj) -> str:
+        guardian = getattr(obj, 'guardian', None) or getattr(obj, 'parent', None)
+        if guardian and hasattr(guardian, 'first_name'):
+            return f"{guardian.first_name} {guardian.last_name}".strip()
+        user = self._get_guardian_user(obj)
+        if user and hasattr(user, 'first_name'):
+            return f"{user.first_name} {user.last_name}".strip()
+        return str(guardian or "")
+
+    def get_guardian_email(self, obj):
+        user = self._get_guardian_user(obj)
+        return getattr(user, 'email', None)
+
+    def get_guardian_login_id(self, obj):
+        user = self._get_guardian_user(obj)
+        return getattr(user, 'login_id', None)
+
+    def get_relationship(self, obj):
+        return (
+            getattr(obj, 'relationship', None)
+            or getattr(obj, 'relationship_type', None)
+            or getattr(obj, 'relation', None)
+            or 'GUARDIAN'
+        )
+
+    def get_is_primary(self, obj) -> bool:
+        return bool(
+            getattr(obj, 'is_primary', False)
+            or getattr(obj, 'is_primary_guardian', False)
+            or getattr(obj, 'is_emergency_contact', False)
+        )
 
 class StudentSelfProfileSerializer(serializers.ModelSerializer):
     """
