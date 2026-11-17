@@ -23,6 +23,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     path('api/v1/auth/', include('apps.accounts.urls')),
+    path('api/v1/academics/', include('apps.academics.urls')),
     
     # OpenAPI Documentation (drf-spectacular)
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

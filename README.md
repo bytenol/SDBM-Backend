@@ -1,1 +1,4 @@
 Create postgressdb named schooldb
+
+seed_accounts
+seed_academics
