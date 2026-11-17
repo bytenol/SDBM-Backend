@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     # Local apps
     'apps.core',
     'apps.accounts',
-    # Additional domain apps will be added here progressively
+    'apps.academics'
 ]
 
 MIDDLEWARE = [
