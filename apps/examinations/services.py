@@ -5,6 +5,8 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError, PermissionDenied
 
 from apps.academics.models import AcademicSession, AcademicTerm, Class, ClassArm, Subject
+from apps.audit.models import AuditAction, AuditCategory
+from apps.audit.services import log_audit_event
 from apps.students.models import StudentEnrollment
 from apps.staff.models import TeacherAssignment
 from .models import (
@@ -216,6 +218,20 @@ def record_bulk_student_scores(validated_data, user):
 
         saved_scores.append(score_obj)
 
+
+    # Emit Audit Log Event
+    log_audit_event(
+        action=AuditAction.CREATE,
+        category=AuditCategory.EXAMINATIONS,
+        description=f"Recorded/updated {len(saved_scores)} student score(s) for Component {component.code} in Term.",
+        actor=user,
+        metadata={
+            "subject_id": str(subject),
+            "component_code": component.code,
+            "scores_count": len(saved_scores),
+        },
+    )
+
     return saved_scores
 
 
@@ -238,6 +254,15 @@ def submit_subject_scores(academic_term_id, class_id, subject_id, user, class_ar
         academic_term=academic_term,
         subject=subject,
     )
+
+    count = scores_qs.update(
+        status=StudentScore.ScoreSubmissionStatus.SUBMITTED,
+        last_modified_by=user,
+    )
+
+    if count == 0:
+        raise ValidationError("No draft score records found to submit for this class and subject.")
+
     if class_arm:
         scores_qs = scores_qs.filter(student_enrollment__class_arm=class_arm)
 
@@ -261,6 +286,19 @@ def submit_subject_scores(academic_term_id, class_id, subject_id, user, class_ar
         new_status=ResultWorkflowStatus.SCORES_SUBMITTED,
         performed_by=user,
         reason=f"Submitted {updated_count} score record(s) for review."
+    )
+
+    log_audit_event(
+        action=AuditAction.UPDATE,
+        category=AuditCategory.EXAMINATIONS,
+        description=f"Submitted {count} score record(s) for review (Subject: {subject_id}, Class: {class_id}).",
+        actor=user,
+        metadata={
+            "term_id": str(academic_term_id),
+            "class_id": str(class_id),
+            "subject_id": str(subject_id),
+            "submitted_count": count,
+        },
     )
 
     return updated_count
@@ -483,6 +521,18 @@ def compute_class_term_results(academic_term_id, class_id, user, class_arm_id=No
         reason=f"Computed term results for {len(summaries)} student(s)."
     )
 
+    log_audit_event(
+        action=AuditAction.CREATE,
+        category=AuditCategory.EXAMINATIONS,
+        description=f"Computed term results for {len(enrollments)} student(s) in Class ID {class_id} for Term.",
+        actor=user,
+        metadata={
+            # "term_id": str(term.id),
+            "class_id": str(class_id),
+            "computed_count": len(enrollments),
+        },
+    )
+
     return summaries
 
 
@@ -565,6 +615,29 @@ def transition_class_result_workflow(academic_term_id, class_id, target_status, 
         new_status=target_status,
         performed_by=user,
         reason=reason or f"Transitioned {count} student result(s) to {target_status}."
+    )
+
+    action_map = {
+        ResultWorkflowStatus.APPROVED: AuditAction.APPROVE,
+        ResultWorkflowStatus.PUBLISHED: AuditAction.PUBLISH,
+        ResultWorkflowStatus.LOCKED: AuditAction.OTHER,
+        ResultWorkflowStatus.UNDER_REVIEW: AuditAction.UNPUBLISH,
+    }
+
+    audit_action = action_map.get(target_status, AuditAction.UPDATE)
+
+    log_audit_event(
+        action=audit_action,
+        category=AuditCategory.EXAMINATIONS,
+        description=f"Transitioned {count} student result summary record(s) to status '{target_status}'. Reason: {reason or 'None'}",
+        actor=user,
+        metadata={
+            "term_id": str(academic_term_id),
+            "class_id": str(class_id),
+            "target_status": target_status,
+            "updated_count": count,
+            "reason": reason,
+        },
     )
 
     return count
