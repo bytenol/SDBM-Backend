@@ -128,10 +128,11 @@ def build_consolidated_me_payload(user) -> dict:
             "full_name": f"{user.first_name} {user.last_name}".strip(),
             "is_active": user.is_active,
             "is_verified": getattr(user, 'is_verified', True),
-            "roles": role_names,
+            "role_names": role_names,
             "primary_portal": resolve_primary_portal(role_names, user.is_superuser),
             "available_portals": available_portals,
             "last_login": user.last_login.isoformat() if user.last_login else None,
+            "date_joined": user.date_joined.isoformat() if user.date_joined else None
         },
         "profiles": {
             "has_staff_profile": has_staff,
